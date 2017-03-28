@@ -2,6 +2,7 @@
 
 from keras import optimizers
 from keras.layers import (Activation, Conv2D, Dense, Flatten, Input,Multiply,BatchNormalization)
+from keras.layers.pooling import GlobalMaxPooling1D, GlobalAveragePooling1D
 from keras.models import Model
 import numpy as np
 import pickle
@@ -1188,40 +1189,32 @@ class DuelingDQNAgent(QNAgent):
         How many samples in each minibatch.
         """
     def __init__(self,
-                 network_type,
-                 num_actions,
-                 preprocessors,
-                 memory,
-                 burnin_policy,
-                 training_policy,
-                 testing_policy,
-                 gamma=GAMMA,
-                 alpha=ALPHA,
-                 target_update_freq=TARGET_QNET_RESET_INTERVAL,
-                 num_burn_in=SAMPLES_BURN_IN,
-                 train_freq=TRAINING_FREQUENCY,
-                 eval_freq=EVALUATION_FREQUENCY,
-                 batch_size=BATCH_SIZE):
+             network_type,
+             num_actions,
+             preprocessors,
+             memory,
+             burnin_policy,
+             training_policy,
+             testing_policy,
+             gamma=GAMMA,
+             alpha=ALPHA,
+             target_update_freq=TARGET_QNET_RESET_INTERVAL,
+             num_burn_in=SAMPLES_BURN_IN,
+             train_freq=TRAINING_FREQUENCY,
+             eval_freq=EVALUATION_FREQUENCY,
+             batch_size=BATCH_SIZE):
 
-        QNAgent.__init__(self,network_type,num_actions,preprocessors,memory,burnin_policy,training_policy,testing_policy,gamma,alpha,target_update_freq,num_burn_in,train_freq,eval_freq,batch_size)
+            QNAgent.__init__(self,network_type,num_actions,preprocessors,memory,burnin_policy,training_policy,testing_policy,gamma,alpha,target_update_freq,num_burn_in,train_freq,eval_freq,batch_size)
 
-        if network_type=='LINEAR':
-	      self.qt_network  	= self.create_linear_model(window = WINDOW_LENGTH, \
-							input_shape = (IMG_ROWS, IMG_COLS), \
-							num_actions = self.num_actions)
-    
-	      self.q_network   	= self.create_linear_model(window = WINDOW_LENGTH, \
-						    input_shape = (IMG_ROWS, IMG_COLS), \
-						    num_actions = self.num_actions)
-        elif network_type=='DEEP':
-                              
-	      self.qt_network  	= self.create_dueling_model(window = WINDOW_LENGTH, \
-						   input_shape = (IMG_ROWS, IMG_COLS), \
-						   num_actions = self.num_actions)
-                              
-	      self.q_network   	= self.create_dueling_model(window = WINDOW_LENGTH, \
-						   input_shape = (IMG_ROWS, IMG_COLS), \
-						   num_actions = self.num_actions)
+
+            self.qt_network = self.create_dueling_model(window = WINDOW_LENGTH, \
+                        input_shape = (IMG_ROWS, IMG_COLS), \
+                        num_actions = self.num_actions)
+
+            self.q_network = self.create_dueling_model(window = WINDOW_LENGTH, \
+                        input_shape = (IMG_ROWS, IMG_COLS), \
+                        num_actions = self.num_actions)
+
 
 	      #self.qt_network.load_weights('ftdqn_target_DEEP.weight')
 	      #self.q_network.load_weights('ftdqn_source_DEEP.weight')
@@ -1248,6 +1241,29 @@ class DuelingDQNAgent(QNAgent):
             opti = optimizers.Adam(lr=self.alpha)
             self.q_network.compile(loss=loss_func, optimizer = opti)
 
+
+    def compile(self, optimizer, loss_func):
+        """Setup all of the TF graph variables/ops.
+            
+            This is inspired by the compile method on the
+            keras.models.Model class.
+            
+            This is a good place to create the target network, setup your
+            loss function and any placeholders you might need.
+            
+            You should use the mean_huber_loss function as your
+            loss_function. You can also experiment with MSE and other
+            losses.
+            
+            The optimizer can be whatever class you want. We used the
+            keras.optimizers.Optimizer class. Specifically the Adam
+            optimizer.
+            """
+            
+        if optimizer == 'Adam':
+            opti = optimizers.Adam(lr=self.alpha)
+            self.q_network.compile(loss=loss_func, optimizer = opti)
+    
     def update_policy(self):
         """Update your policy.
             
@@ -1262,46 +1278,86 @@ class DuelingDQNAgent(QNAgent):
             
             You might want to return the loss and other metrics as an
             output. They can help you monitor how training is going.
-        """
-                
-        # generate batch samples for CNN
+            """
+    
+        # sample the memory replay to get entries <state, action, reward (apply action at state), is_terminal (next state is terminal)>
         mem_samples = self.memory.sample(self.batch_size)
-        #mem_samples = self.atari_proc.process_batch_for_network(mem_samples)
+        assert len(mem_samples)==self.batch_size
+
+        #the state-batch
         input_state_batch=np.zeros((self.batch_size, WINDOW_LENGTH, IMG_ROWS, IMG_COLS))
+
+        #the next-batch
         input_nextstate_batch=np.zeros((self.batch_size, WINDOW_LENGTH, IMG_ROWS, IMG_COLS))
+
+        #input mask needed to chose only one q-value
         input_mask_batch=np.zeros((self.batch_size,self.num_actions))
+
+        #the q-value which corresponds to the applied action of the sample
         output_target_batch=np.zeros((self.batch_size,self.num_actions))
-        
-        for ind in range(self.batch_size):
-            input_state_batch[ind,:,:,:] = self.atari_proc.process_state_for_network(np.array(mem_samples[ind].state))
-            input_nextstate_batch[ind,:,:,:] = self.atari_proc.process_state_for_network(np.array(mem_samples[ind].next_state))
-            input_mask_batch[ind, mem_samples[ind].action] = 1
-        
-        aux_q = self.q_network.predict([input_nextstate_batch, self.input_dummymask_batch],batch_size=self.batch_size)
-        best_actions=np.argmax(aux_q,axis=1)
+    
+    
+        for idx in range(self.batch_size):
+            
+            #create a 4d array with the states
+            assert mem_samples[idx].state[0].shape==(IMG_ROWS,IMG_COLS)
+            assert len(mem_samples[idx].state)==WINDOW_LENGTH
+            input_state_batch[idx,:,:,:] = self.atari_proc.process_state_for_network(mem_samples[idx].state)
+            
+            #create a 4d array with the states
+            assert mem_samples[idx].next_state[0].shape==(IMG_ROWS,IMG_COLS)
+            assert len(mem_samples[idx].next_state)==WINDOW_LENGTH
+            input_nextstate_batch[idx,:,:,:] = self.atari_proc.process_state_for_network(mem_samples[idx].next_state)
+            
+            #activate the output of the applied action
+            input_mask_batch[idx, mem_samples[idx].action] = 1
+
+        assert input_state_batch.shape==(self.batch_size,WINDOW_LENGTH,IMG_ROWS,IMG_COLS)
+        assert input_nextstate_batch.shape==(self.batch_size,WINDOW_LENGTH,IMG_ROWS,IMG_COLS)
+
+        #on the next state, chose the best predicted q-value on the fixed-target network
         target_q = self.qt_network.predict([input_nextstate_batch, self.input_dummymask_batch],batch_size=self.batch_size)
-        best_target_q = target_q[range(self.batch_size), best_actions]
-	if DEBUG:
-        	print 'best Q values of batch {0}'.format(best_target_q)
+        assert target_q.shape==(self.batch_size,self.num_actions)
+        best_target_q = np.amax(target_q, axis=1)
+
+        assert best_target_q.shape==(self.batch_size,)
+
+    
+        # if DEBUG:
+        #	print 'best Q values of batch {0}'.format(best_target_q)
+
+        #compute the target q-value r+gamma*max{a'}(Q(nextstat,a',qt)
         for ind in range(self.batch_size):
             output_target_batch[ind, mem_samples[ind].action] = mem_samples[ind].reward + self.gamma*best_target_q[ind]
-        
-        temp_loss = self.q_network.train_on_batch(x=[input_state_batch, input_mask_batch], y=output_target_batch)
 
-    
-	if self.num_updates % (self.target_update_freq/100) == 0:
-            self.train_loss.append(temp_loss)
-	    self.mean_q.append(self.eval_avg_q())
-
-	if self.num_updates % self.target_update_freq == 0:
-	    self.save_data()
-	    print "======================= Sync target and source network ============================="
-	    tfrl.utils.get_hard_target_model_updates(self.qt_network, self.q_network)
+        loss = self.q_network.train_on_batch(x=[input_state_batch, input_mask_batch], y=output_target_batch)
+        self.train_loss.append(loss)
 
 
-    
-        
+        #update the target network
+        if self.num_updates>0  and self.num_updates % self.target_update_freq == 0:
+            print "======================= Sync target and source network ============================="
+            tfrl.utils.get_hard_target_model_updates(self.qt_network, self.q_network)
+
+
     def save_model(self):
-        exp_num=3
-        self.q_network.save_weights('dueling_source_{0}_{1}.weight'.format(self.network_type, exp_num))
-        self.qt_network.save_weights('dueling_target_{0}_{1}.weight'.format(self.network_type, exp_num))
+        self.q_network.save_weights('dueldqn_source_{0}.weight'.format(self.network_type))
+        self.qt_network.save_weights('dueldqn_target_{0}.weight'.format(self.network_type))
+    
+    def plot_eval_results(self):
+        
+        
+        print self.mean_q
+        plt.plot(self.mean_q)
+        plt.savefig('dueldqn_mean_q_{0}.jpg'.format(self.network_type))
+        plt.close()
+        plt.plot(self.total_reward)
+        plt.savefig('dueldqn_reward_q_{0}.jpg'.format(self.network_type))
+        plt.close()
+        plt.plot(self.episode_length)
+        plt.savefig('dueldqn_episode_length_q_{0}.jpg'.format(self.network_type))
+        plt.close()
+        
+        plt.plot(self.train_loss)
+        plt.savefig('dueldqn_train_loss_length_q_{0}.jpg'.format(self.network_type))
+        plt.close()
