@@ -11,28 +11,37 @@ import numpy as np
 import deeprl_hw2 as tfrl
 from deeprl_hw2.dqn import DQNAgent
 from deeprl_hw2.dqn import DoubleDQNAgent
+from deeprl_hw2.dqn import DuelingDQNAgent
 from deeprl_hw2.dqn import FTDQNAgent
 from deeprl_hw2.objectives import mean_huber_loss
+from deeprl_hw2.objectives import huber_loss
 
 
 import gym
+from gym import wrappers
 
+DEBUG = 0
 
 GAMMA = 0.99
-ALPHA = 1e-4
+ALPHA = 25e-5
 EPSILON = 0.05
 REPLAY_BUFFER_SIZE = 1000000
 BATCH_SIZE = 32
 IMG_ROWS , IMG_COLS = 84, 84
 WINDOW = 4
 TARGET_FREQ = 10000
-NUM_BURN_IN = 3000
+NUM_BURN_IN = 50000
 TRAIN_FREQ=4
-#TRAIN_FREQ=1000
 MOMENTUM = 0.8
 MAX_NUM_ITERATIONS=5000000
-ANNEAL_NUM_STEPS = 100000
+ANNEAL_NUM_STEPS = 4000000
+MAX_EPISODE_LENGTH=10000
 
+if DEBUG:
+	BATCH_SIZE = 2
+	NUM_BURN_IN = 12
+	MAX_NUM_ITERATIONS=24
+	MAX_EPISODE_LENGTH=12
 
 def get_output_folder(parent_dir, env_name):
     """Return save folder.
@@ -74,51 +83,76 @@ def get_output_folder(parent_dir, env_name):
 def main():  # noqa: D103
     parser = argparse.ArgumentParser(description='Run DQN on Atari Enduro')
     parser.add_argument('--env', default='Enduro-v0', help='Atari env name')
+    parser.add_argument('--agent', default='FTDQN', help='Atari env name')
+    parser.add_argument('--net', default='DEEP', help='Atari env name')
     parser.add_argument(
         '-o', '--output', default='atari-v0', help='Directory to save data to')
     parser.add_argument('--seed', default=0, type=int, help='Random seed')
 
     args = parser.parse_args()
 
-
-
     atari_preproc = tfrl.preprocessors.AtariPreprocessor()
-    replay_mem = tfrl.core.ReplayMemory(max_size=1000000, window_length=4)
+    replay_mem = tfrl.core.ReplayMemory(max_size=REPLAY_BUFFER_SIZE, window_length=WINDOW)
 
 
-   
-    env = gym.make('SpaceInvaders-v3')
+    game='Enduro-v0'
+    env = gym.make(game)
     assert env is not None
-    #env2 = gym.make('Enduro-v0')
+  
+    if args.agent=='DQN':
+
+         dqn_agent =  DQNAgent(network_type = args.net, \
+                               num_actions = env.action_space.n, \
+                               preprocessors = atari_preproc, \
+                               memory = replay_mem, \
+                               burnin_policy = tfrl.policy.UniformRandomPolicy(num_actions = env.action_space.n),\
+                               testing_policy   = tfrl.policy.GreedyEpsilonPolicy(0.05,env.action_space.n), \
+                               training_policy    = tfrl.policy.LinearDecayGreedyEpsilonPolicy(env.action_space.n,1.0, 0.1,ANNEAL_NUM_STEPS), \
+                               gamma = GAMMA, \
+                               alpha = ALPHA, \
+                               target_update_freq = TARGET_FREQ, \
+                               num_burn_in = NUM_BURN_IN, \
+                               train_freq = TRAIN_FREQ, \
+                               batch_size = BATCH_SIZE )
     
-############# six questions; six experiments ##########################
-    #dqn_agent =  DQNAgent(network_type 	    	    = 'LINEAR', \#
-    #dqn_agent = FTDQNAgent(network_type 	    = 'LINEAR', \#
-    #dqn_agent = DoubleDQNAgent(network_type 	    = 'LINEAR', \#
-    
-    dqn_agent = DoubleDQNAgent(network_type 	    = 'DEEP', \
-    #dqn_agent = DuelingDQNAgent(network_type 	    = 'DEEP', \#
-    
-    
-    # dqn_agent = FTDQNAgent(network_type = 'DEEP', \#
-                           num_actions = env.action_space.n, \
-                           preprocessors = atari_preproc, \
-                           memory = replay_mem, \
-                           burnin_policy = tfrl.policy.UniformRandomPolicy(num_actions = env.action_space.n),\
-                           testing_policy   = tfrl.policy.GreedyEpsilonPolicy(0.05,env.action_space.n), \
-                           training_policy    = tfrl.policy.LinearDecayGreedyEpsilonPolicy(env.action_space.n,1.0, 0.05,ANNEAL_NUM_STEPS), \
-                           gamma = GAMMA, \
-                           alpha = ALPHA, \
-                           target_update_freq = TARGET_FREQ, \
-                           num_burn_in = NUM_BURN_IN, \
-                           train_freq = TRAIN_FREQ, \
-                           batch_size = BATCH_SIZE )
+    elif args.agent=='DoubleDQN':
+        dqn_agent =  DoubleDQNAgent(network_type = args.net, \
+                              num_actions = env.action_space.n, \
+                              preprocessors = atari_preproc, \
+                              memory = replay_mem, \
+                              burnin_policy = tfrl.policy.UniformRandomPolicy(num_actions = env.action_space.n),\
+                              testing_policy   = tfrl.policy.GreedyEpsilonPolicy(0.05,env.action_space.n), \
+                              training_policy    = tfrl.policy.LinearDecayGreedyEpsilonPolicy(env.action_space.n,1.0, 0.1,ANNEAL_NUM_STEPS), \
+                              gamma = GAMMA, \
+                              alpha = ALPHA, \
+                              target_update_freq = TARGET_FREQ, \
+                              num_burn_in = NUM_BURN_IN, \
+                              train_freq = TRAIN_FREQ, \
+                              batch_size = BATCH_SIZE )
+
+    else:
+        dqn_agent =  FTDQNAgent(network_type = args.net, \
+                              num_actions = env.action_space.n, \
+                              preprocessors = atari_preproc, \
+                              memory = replay_mem, \
+                              burnin_policy = tfrl.policy.UniformRandomPolicy(num_actions = env.action_space.n),\
+                              testing_policy   = tfrl.policy.GreedyEpsilonPolicy(0.05,env.action_space.n), \
+                              training_policy    = tfrl.policy.LinearDecayGreedyEpsilonPolicy(env.action_space.n,1.0, 0.1,ANNEAL_NUM_STEPS), \
+                              gamma = GAMMA, \
+                              alpha = ALPHA, \
+                              target_update_freq = TARGET_FREQ, \
+                              num_burn_in = NUM_BURN_IN, \
+                              train_freq = TRAIN_FREQ, \
+                              batch_size = BATCH_SIZE )
+
 
     dqn_agent.compile(optimizer='Adam', loss_func=mean_huber_loss)
     
-    eval_env = gym.make('SpaceInvaders-v3')
+    eval_env = gym.make(game)
+    eval_env = wrappers.Monitor(eval_env,'./videos_{0}_{1}'.format(args.agent,args.net),force=True)
+    
     assert eval_env is not None
-    dqn_agent.fit(env, eval_env, num_iterations=MAX_NUM_ITERATIONS, max_episode_length=10000)
+    dqn_agent.fit(env, eval_env, num_iterations=MAX_NUM_ITERATIONS,max_episode_length=MAX_EPISODE_LENGTH)
     
 
 

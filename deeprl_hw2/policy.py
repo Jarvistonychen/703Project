@@ -81,8 +81,10 @@ class GreedyPolicy(Policy):
 
     def select_action(self, q_values):  # noqa: D102
         action = np.argmax(q_values)
-	if DEBUG:
-		print 'In greedy policy: action {0}'.format(action)
+        if DEBUG:
+            print 'Q-values'
+            print q_values
+            print 'In greedy policy: action {0}'.format(action)
 	return action
 
 
@@ -116,15 +118,19 @@ class GreedyEpsilonPolicy(Policy):
         int:
           The action index chosen.
         """
-	rand_num = np.random.rand()
-	if rand_num < self.epsilon:
-		action =  np.random.randint(self.num_actions)
-	else:
-		action = np.argmax(q_values)
+        rand_num = np.random.rand()
+        if rand_num < self.epsilon:
+            action =  np.random.randint(self.num_actions)
+            # print 'random'
+        else:
+            action = np.argmax(q_values)
+            #print 'greedy'
+            #print q_values
 	
-	if DEBUG:
-		print 'GreedyEpsilon: epsilon {0} action {1}'.format(self.epsilon, action)
-	return action
+        if DEBUG:
+            print 'GreedyEpsilon: epsilon {0} action {1}'.format(self.epsilon, action)
+        
+        return action
 
 
 class LinearDecayGreedyEpsilonPolicy(Policy):
@@ -171,8 +177,8 @@ class LinearDecayGreedyEpsilonPolicy(Policy):
         b = float(self.start_value)
         self.policy.epsilon = max(self.end_value, a * float(num_update) + b)
         action = self.policy.select_action(q_values)
-	if DEBUG:
-		print 'LinearDecay: epsilon {0} action {1}'.format(self.policy.epsilon,action)
+        if DEBUG:
+            print 'LinearDecay: epsilon {0} action {1}'.format(self.policy.epsilon,action)
 	return action
 
     def reset(self):

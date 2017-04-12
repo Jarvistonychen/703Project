@@ -90,6 +90,8 @@ class AtariPreprocessor(Preprocessor):
         assert processed_state.shape==(WINDOW_LENGTH,INPUT_SHAPE[0],INPUT_SHAPE[1])
         
         processed_state = processed_state.astype('float32') / 255.
+        
+    
         return processed_state
 
     def process_samples_for_network(self, samples):
@@ -106,7 +108,13 @@ class AtariPreprocessor(Preprocessor):
             state.insert(0, np.zeros(state[0].shape))
         
         assert len(state)==WINDOW_LENGTH
-        return self.process_state_for_network(state)
+        #assert not (np.array_equal(state[0],state[1]))  or (np.array_equal(state[0],np.zeros(state[0].shape)))
+        #assert not (np.array_equal(state[1],state[2]))  or (np.array_equal(state[1],np.zeros(state[0].shape)))
+        #assert not (np.array_equal(state[2],state[3]))  or (np.array_equal(state[2],np.zeros(state[0].shape)))
+        
+        processed_state=self.process_state_for_network(state)
+        #print processed_state
+        return processed_state
 
     def process_reward(self, reward):
         """Clip reward between -1 and 1."""

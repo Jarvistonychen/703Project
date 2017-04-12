@@ -1,11 +1,12 @@
 """Core classes."""
 from collections import namedtuple
+from PIL import Image
 import random
 import numpy as np
 
 Sample = namedtuple('Experience', 'state, action, reward, next_state, terminal')
 
-
+DEBUG=0
 class Preprocessor:
     """Preprocessor base class.
 
@@ -141,6 +142,8 @@ class RingBuffer(object):
         if idx < 0 or idx >= self.length:
             raise KeyError()
         return self.data[(self.start + idx) % self.maxlen]
+    def __str__(self):
+        return 'start pointer {0} length {1} max length {2}'.format(self.start, self.length, self.maxlen)
         
     def append(self, v):
         if self.length < self.maxlen:
@@ -224,17 +227,34 @@ class ReplayMemory:
     def nb_entries(self):
         return self.observations.length
 
-    def append(self, state, action, reward,is_terminal):
-        self.observations.append(state)
+    def append(self, state, action, reward,is_terminal, flickering=False):
+        if flickering==True:
+            flicker=np.random.binomial(1,0.5)
+        
+            if flicker:
+                self.observations.append(np.uint8(np.zeros(state.shape)))
+            else:
+                self.observations.append(state)
+        else:
+            self.observations.append(state)
+        
         self.actions.append(action)
         self.rewards.append(reward)
         self.terminal.append(is_terminal)
+    
+        if DEBUG:
+            print self.observations
+            print self.actions
+            print self.rewards
+            print self.terminal
 
 
     def sample(self, batch_size, indexes=None):
         
         if indexes is None:
         #if indexes is None draw random samples, each index refers to the last frame of next_state
+        #print self.nb_entries
+        #    print batch_size
             indexes = random.sample(xrange(2, self.nb_entries), batch_size)
       
       
@@ -262,9 +282,13 @@ class ReplayMemory:
                 
                 terminal=self.terminal[idx-2]
 
+            if DEBUG:
+                print 'idx sample {0}'.format(idx)
             #form the state
-            
             state = [self.observations[idx-1]] #we know that this is not the last frame of episode and idx-1>0
+            
+
+            
             for offset in range(2,self.window_length+1):
                 cur_idx = idx - offset
                 
@@ -279,17 +303,31 @@ class ReplayMemory:
             #fill-in the state with zeroes in case it is needed
 
             while len(state) < self.window_length:
-                state.insert(0, np.zeros(state[0].shape))
-                    
+                state.insert(0, np.uint8(np.zeros(state[0].shape)))
             action = self.actions[idx - 1]
             reward = self.rewards[idx - 1]
             next_terminal = self.terminal[idx - 1]
-                
+            
+            if DEBUG:
+                for fr_id in range(0,self.window_length):
+                    state_img=Image.fromarray(state[fr_id])
+                    state_img.save('sample_{0}_state_{1}.jpg'.format(idx,fr_id))
+        
+        
             next_state = [np.copy(x) for x in state[1:]]
             next_state.append(self.observations[idx])
+
+            if DEBUG:
+                for fr_id in range(0,self.window_length):
+                    next_state_img=Image.fromarray(next_state[fr_id])
+                    next_state_img.save('sample_{0}_next_state_{1}.jpg'.format(idx,fr_id))
     
             assert len(state) == self.window_length
             assert len(next_state) == len(state)
+            
+            if DEBUG:
+                print 'action{0} reward next{1} terminal{1}'.format(action, reward, next_terminal)
+                
             samples.append(Sample(state=state, action=action, reward=reward,
                                           next_state=next_state, terminal=next_terminal))
                 
